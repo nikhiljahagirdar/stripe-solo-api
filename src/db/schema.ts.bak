@@ -1,0 +1,1746 @@
+import { pgTable, text, serial, integer, timestamp, bigint, boolean, varchar, numeric, jsonb, index } from 'drizzle-orm/pg-core';
+import { relations } from 'drizzle-orm';
+import { fi } from 'zod/v4/locales';
+
+/**
+ * @table roles
+ * @description Represents user roles in the application.
+ */
+export const roles = pgTable('roles', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull().unique(),
+});
+
+export type Role = typeof roles.$inferSelect;
+export type NewRole = typeof roles.$inferInsert;
+
+/**
+ * @table users
+ * @description Represents application users.
+ */
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  firstName: text('first_name').notNull(),
+  lastName: text('last_name').notNull(),
+  email: text('email').notNull().unique(),
+  passwordHash: text('password_hash').notNull(),
+  roleId: integer('role_id').notNull().references(() => roles.id),
+  parentId: integer('parent_id').default(0), 
+  status: text('status').notNull().default('active'), // e.g., 'active', 'inactive', 'suspended'
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(), // Added
+}, (table) => ({
+  roleIdIdx: index('users_role_id_idx').on(table.roleId),
+}));
+
+export type User = typeof users.$inferSelect;
+export type NewUser = typeof users.$inferInsert;
+
+
+/**
+ * @table stripeAccounts
+ * @description Stores information about connected Stripe accounts for users.
+ */
+export const stripeKeys = pgTable('stripe_keys', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  name: text('name').notNull(),
+  encryptedApiKey: text('encrypted_api_key'), // Encrypted API key (secret key) - consolidated from secret/publishable
+  encryptedWebhookSecret: text('encrypted_webhook_secret'), // For webhook signature verification
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(), // Added
+}, (table) => ({
+  userIdIdx: index('stripe_keys_user_id_idx').on(table.userId),
+}));
+
+export type StripeKey = typeof stripeKeys.$inferSelect;
+export type NewStripeKey = typeof stripeKeys.$inferInsert;
+
+
+/**
+ * @table stripeAccounts
+ * @description Stores detailed information about connected Stripe accounts for users, mirroring the Stripe Account object.
+ */
+export const stripeAccounts = pgTable('stripe_accounts', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripe_key_id: integer('stripe_key_id').notNull().references(() => stripeKeys.id), // NEW: link to our stripe_keys row
+  stripeAccountId: text('stripe_account_id').notNull().unique(), // The Stripe Account ID (e.g., 'acct_...')
+  businessType: text('business_type'), // e.g., 'individual', 'company'
+  country: varchar('country', { length: 2 }), // Two-letter country code
+  defaultCurrency: varchar('default_currency', { length: 3 }), // Three-letter ISO currency code
+  detailsSubmitted: boolean('details_submitted').default(false),
+  chargesEnabled: boolean('charges_enabled').default(false),
+  payoutsEnabled: boolean('payouts_enabled').default(false),
+  email: text('email'), // The email address of the account owner
+  displayName: text('display_name'), // The name displayed in the Stripe dashboard
+  businessProfileName: text('business_profile_name'), // The legal name of the business
+  businessProfileUrl: text('business_profile_url'), // The business's website
+  type: text('type'), // 'standard', 'express', or 'custom'
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('stripe_accounts_user_id_idx').on(table.userId),
+  stripeKeyIdIdx: index('stripe_accounts_stripe_key_id_idx').on(table.stripe_key_id),
+}));
+
+export type StripeAccount = typeof stripeAccounts.$inferSelect;
+export type NewStripeAccount = typeof stripeAccounts.$inferInsert;
+
+
+/**
+ * @table analyticsCache
+ * @description Stores cached analytics data for Stripe accounts.
+ */
+export const analyticsCache = pgTable('analytics_cache', {
+  id: serial('id').primaryKey(),
+  accountId: integer('account_id').notNull().references(() => stripeAccounts.id),
+  data: text('data').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  expiresAt: timestamp('expires_at').notNull(),
+}, (table) => ({
+  accountIdIdx: index('analytics_cache_account_id_idx').on(table.accountId),
+}));
+
+export type AnalyticsCache = typeof analyticsCache.$inferSelect;
+export type NewAnalyticsCache = typeof analyticsCache.$inferInsert;
+
+
+/**
+ * @table customerTable
+ * @description Stores information about Stripe customers linked to application users.
+ */
+export const customerTable = pgTable('customers', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id')  // NEW: link to our stripe_accounts row
+    .notNull()
+    .references(() => stripeAccounts.id),
+  stripeCustomerId: text('stripe_customer_id').notNull().unique(),
+  email: text('email'),
+  name: text('name'),
+  liveMode: boolean('livemode'),
+  created: bigint('created', { mode: 'number' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('customers_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('customers_stripe_account_id_idx').on(table.stripeAccountId),
+}));
+
+export type Customer = typeof customerTable.$inferSelect;
+export type NewCustomer = typeof customerTable.$inferInsert;
+
+
+// payment_intents
+export const paymentIntentsTable = pgTable('payment_intents', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id')  // NEW
+    .notNull()
+    .references(() => stripeAccounts.id),
+  stripeCustomerId: text('stripe_customer_id')
+    .references(() => customerTable.stripeCustomerId),
+  paymentIntentId: text('payment_intent_id').notNull().unique(),
+  amount: bigint('amount', { mode: 'number' }).notNull(),
+  currency: text('currency').notNull(),
+  status: text('status').notNull(),
+  livemode: boolean('livemode'),
+  created: bigint('created', { mode: 'number' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('payment_intents_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('payment_intents_stripe_account_id_idx').on(table.stripeAccountId),
+  stripeCustomerIdIdx: index('payment_intents_stripe_customer_id_idx').on(table.stripeCustomerId),
+}));
+
+export type PaymentIntent = typeof paymentIntentsTable.$inferSelect;
+export type NewPaymentIntent = typeof paymentIntentsTable.$inferInsert;
+
+
+
+/**
+ * @table invoiceTable
+ * @description Stores information about Stripe Invoices.
+ */
+export const invoiceTable = pgTable('invoices', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeCustomerId: text('stripe_customer_id').references(() => customerTable.stripeCustomerId),
+  stripeInvoiceId: text('stripe_invoice_id').notNull().unique(),
+  amount: bigint('amount', { mode: 'number' }), // Can be null for draft invoices without line items
+  currency: text('currency'), // Can be null for draft invoices
+  status: text('status'), // e.g., 'draft', 'open', 'paid', 'void', 'uncollectible'
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('invoices_user_id_idx').on(table.userId),
+  stripeCustomerIdIdx: index('invoices_stripe_customer_id_idx').on(table.stripeCustomerId),
+}));
+
+export type Invoice = typeof invoiceTable.$inferSelect;
+export type NewInvoice = typeof invoiceTable.$inferInsert;
+
+
+/**
+ * @table subscriptionTable
+ * @description Stores information about Stripe Subscriptions.
+ */
+export const subscriptionTable = pgTable('subscriptions', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeCustomerId: text('stripe_customer_id').references(() => customerTable.stripeCustomerId),
+  stripeSubscriptionId: text('stripe_subscription_id').notNull().unique(),
+  stripePriceId: text('stripe_price_id').notNull(),
+  status: text('status').notNull(), // e.g., 'active', 'past_due', 'canceled', 'unpaid', 'incomplete', 'incomplete_expired', 'trialing'
+  quantity: integer('quantity').notNull().default(1),
+  currentPeriodStart: timestamp('current_period_start', { mode: 'date' }).notNull(),
+  currentPeriodEnd: timestamp('current_period_end', { mode: 'date' }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('subscriptions_user_id_idx').on(table.userId),
+  stripeCustomerIdIdx: index('subscriptions_stripe_customer_id_idx').on(table.stripeCustomerId),
+}));
+
+export type Subscription = typeof subscriptionTable.$inferSelect;
+export type NewSubscription = typeof subscriptionTable.$inferInsert;
+
+
+/**
+ * @table productTable
+ * @description Stores information about Stripe Products.
+ */
+export const productTable = pgTable('products', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeProductId: text('stripe_product_id').notNull().unique(),
+  name: text('name').notNull(),
+  description: text('description'),
+  created_at: timestamp('created_at').defaultNow().notNull(),
+  updated_at: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('products_user_id_idx').on(table.userId),
+}));
+
+export type Product = typeof productTable.$inferSelect;
+export type NewProduct = typeof productTable.$inferInsert;
+
+
+/**
+ * @table priceTable
+ * @description Stores information about Stripe Prices.
+ */
+export const priceTable = pgTable('prices', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeProductId: text('stripe_product_id').notNull().references(() => productTable.stripeProductId),
+  stripePriceId: text('stripe_price_id').notNull().unique(),
+  unitAmount: bigint('unit_amount', { mode: 'number' }), // Can be null for recurring prices without a fixed amount
+  currency: text('currency').notNull(),
+  recurringInterval: text('recurring_interval'), // e.g., 'day', 'week', 'month', 'year'
+  active: boolean('active').notNull().default(true),
+  created_at: timestamp('created_at').defaultNow().notNull(),
+  updated_at: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('prices_user_id_idx').on(table.userId),
+  stripeProductIdIdx: index('prices_stripe_product_id_idx').on(table.stripeProductId),
+}));
+
+export type Price = typeof priceTable.$inferSelect;
+export type NewPrice = typeof priceTable.$inferInsert;
+
+
+/**
+ * @table disputeTable
+ * @description Stores information about Stripe Disputes.
+ */
+export const disputeTable = pgTable('disputes', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeChargeId: text('stripe_charge_id'), // The charge that is disputed
+  stripeDisputeId: text('stripe_dispute_id').notNull().unique(),
+  amount: bigint('amount', { mode: 'number' }).notNull(),
+  currency: text('currency').notNull(),
+  reason: text('reason'),
+  status: text('status').notNull(), // e.g., 'warning_closed', 'needs_response', 'won', 'lost', 'closed'
+  created_at: timestamp('created_at').defaultNow().notNull(),
+  updated_at: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('disputes_user_id_idx').on(table.userId),
+}));
+
+export type Dispute = typeof disputeTable.$inferSelect;
+export type NewDispute = typeof disputeTable.$inferInsert;
+
+
+/**
+ * Balance and Balance Transactions
+ */
+export const balanceTable = pgTable('balance', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  available: bigint('available', { mode: 'number' }).notNull(),
+  pending: bigint('pending', { mode: 'number' }).notNull(),
+  currency: varchar('currency', { length: 3 }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('balance_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('balance_stripe_account_id_idx').on(table.stripeAccountId),
+}));
+
+export type Balance = typeof balanceTable.$inferSelect;
+export type NewBalance = typeof balanceTable.$inferInsert;
+
+export const balanceTransactionsTable = pgTable('balance_transactions', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeTransactionId: text('stripe_transaction_id').notNull().unique(),
+  type: text('type'),
+  currency: varchar('currency', { length: 3 }),
+  amount: bigint('amount', { mode: 'number' }),
+  fee: bigint('fee', { mode: 'number' }),
+  net: bigint('net', { mode: 'number' }),
+  status: text('status'),
+  stripeChargeId: text('stripe_charge_id'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('balance_transactions_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('balance_transactions_stripe_account_id_idx').on(table.stripeAccountId),
+}));
+
+export type BalanceTransaction = typeof balanceTransactionsTable.$inferSelect;
+export type NewBalanceTransaction = typeof balanceTransactionsTable.$inferInsert;
+
+/**
+ * Charges
+ */
+export const chargesTable = pgTable('charges', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeChargeId: text('stripe_charge_id').notNull().unique(),
+  stripeCustomerId: text('stripe_customer_id').references(() => customerTable.stripeCustomerId),
+  amount: bigint('amount', { mode: 'number' }).notNull(),
+  currency: varchar('currency', { length: 3 }).notNull(),
+  status: text('status'),
+  description: text('description'),
+  paid: boolean('paid').default(false),
+  refunded: boolean('refunded').default(false),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('charges_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('charges_stripe_account_id_idx').on(table.stripeAccountId),
+  stripeCustomerIdIdx: index('charges_stripe_customer_id_idx').on(table.stripeCustomerId),
+}));
+
+export type Charge = typeof chargesTable.$inferSelect;
+export type NewCharge = typeof chargesTable.$inferInsert;
+
+/**
+ * Customer Sessions
+ */
+export const customerSessionsTable = pgTable('customer_sessions', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeSessionId: text('stripe_session_id').notNull().unique(),
+  stripeCustomerId: text('stripe_customer_id').references(() => customerTable.stripeCustomerId),
+  clientSecret: text('client_secret'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('customer_sessions_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('customer_sessions_stripe_account_id_idx').on(table.stripeAccountId),
+  stripeCustomerIdIdx: index('customer_sessions_stripe_customer_id_idx').on(table.stripeCustomerId),
+}));
+
+export type CustomerSession = typeof customerSessionsTable.$inferSelect;
+export type NewCustomerSession = typeof customerSessionsTable.$inferInsert;
+
+/**
+ * Events
+ */
+export const eventsTable = pgTable('events', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeEventId: text('stripe_event_id').notNull().unique(),
+  type: text('type').notNull(),
+  apiVersion: text('api_version'),
+  data: text('data'),
+  created: bigint('created', { mode: 'number' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('events_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('events_stripe_account_id_idx').on(table.stripeAccountId),
+}));
+
+export type Event = typeof eventsTable.$inferSelect;
+export type NewEvent = typeof eventsTable.$inferInsert;
+
+/**
+ * Files
+ */
+export const filesTable = pgTable('files', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeFileId: text('stripe_file_id').notNull().unique(),
+filename: text('filename'),
+  purpose: text('purpose'),
+  size: integer('size'),
+  type: text('type'),
+  created: bigint('created', { mode: 'number' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('files_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('files_stripe_account_id_idx').on(table.stripeAccountId),
+}));
+
+export type File = typeof filesTable.$inferSelect;
+export type NewFile = typeof filesTable.$inferInsert;
+
+/**
+ * File Links
+ */
+export const fileLinksTable = pgTable('file_links', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeFileLinkId: text('stripe_file_link_id').notNull().unique(),
+  stripeFileId: text('stripe_file_id'),
+  url: text('url'),
+  expired: boolean('expired').default(false),
+  expiresAt: timestamp('expires_at'),
+  created: bigint('created', { mode: 'number' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('file_links_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('file_links_stripe_account_id_idx').on(table.stripeAccountId),
+}));
+
+export type FileLink = typeof fileLinksTable.$inferSelect;
+export type NewFileLink = typeof fileLinksTable.$inferInsert;
+
+/**
+ * Mandates
+ */
+export const mandatesTable = pgTable('mandates', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeMandateId: text('stripe_mandate_id').notNull().unique(),
+  stripeCustomerId: text('stripe_customer_id').references(() => customerTable.stripeCustomerId),
+  type: text('type'),
+  status: text('status'),
+  created: bigint('created', { mode: 'number' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('mandates_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('mandates_stripe_account_id_idx').on(table.stripeAccountId),
+  stripeCustomerIdIdx: index('mandates_stripe_customer_id_idx').on(table.stripeCustomerId),
+}));
+
+export type Mandate = typeof mandatesTable.$inferSelect;
+export type NewMandate = typeof mandatesTable.$inferInsert;
+
+/**
+ * Setup Intents & Setup Attempts
+ */
+export const setupIntentsTable = pgTable('setup_intents', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeSetupIntentId: text('stripe_setup_intent_id').notNull().unique(),
+  stripeCustomerId: text('stripe_customer_id').references(() => customerTable.stripeCustomerId),
+  status: text('status'),
+  usage: text('usage'),
+  created: bigint('created', { mode: 'number' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('setup_intents_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('setup_intents_stripe_account_id_idx').on(table.stripeAccountId),
+  stripeCustomerIdIdx: index('setup_intents_stripe_customer_id_idx').on(table.stripeCustomerId),
+}));
+
+export type SetupIntent = typeof setupIntentsTable.$inferSelect;
+export type NewSetupIntent = typeof setupIntentsTable.$inferInsert;
+
+export const setupAttemptsTable = pgTable('setup_attempts', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeSetupAttemptId: text('stripe_setup_attempt_id').notNull().unique(),
+  stripeSetupIntentId: text('stripe_setup_intent_id').references(() => setupIntentsTable.stripeSetupIntentId),
+  status: text('status'),
+  created: bigint('created', { mode: 'number' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('setup_attempts_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('setup_attempts_stripe_account_id_idx').on(table.stripeAccountId),
+  stripeSetupIntentIdIdx: index('setup_attempts_stripe_setup_intent_id_idx').on(table.stripeSetupIntentId),
+}));
+
+export type SetupAttempt = typeof setupAttemptsTable.$inferSelect;
+export type NewSetupAttempt = typeof setupAttemptsTable.$inferInsert;
+
+/**
+ * Payouts & Refunds
+ */
+export const payoutsTable = pgTable('payouts', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripePayoutId: text('stripe_payout_id').notNull().unique(),
+  amount: bigint('amount', { mode: 'number' }).notNull(),
+  currency: varchar('currency', { length: 3 }).notNull(),
+  status: text('status'),
+  arrivalDate: timestamp('arrival_date'),
+  created: bigint('created', { mode: 'number' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('payouts_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('payouts_stripe_account_id_idx').on(table.stripeAccountId),
+}));
+
+export type Payout = typeof payoutsTable.$inferSelect;
+export type NewPayout = typeof payoutsTable.$inferInsert;
+
+export const refundsTable = pgTable('refunds', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeRefundId: text('stripe_refund_id').notNull().unique(),
+  stripeChargeId: text('stripe_charge_id'),
+  amount: bigint('amount', { mode: 'number' }).notNull(),
+  currency: varchar('currency', { length: 3 }).notNull(),
+  status: text('status'),
+  reason: text('reason'),
+  created: bigint('created', { mode: 'number' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('refunds_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('refunds_stripe_account_id_idx').on(table.stripeAccountId),
+}));
+
+export type Refund = typeof refundsTable.$inferSelect;
+export type NewRefund = typeof refundsTable.$inferInsert;
+
+/**
+ * Tokens & Confirmation Tokens
+ */
+export const tokensTable = pgTable('tokens', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeTokenId: text('stripe_token_id').notNull().unique(),
+  type: text('type'),
+  created: bigint('created', { mode: 'number' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('tokens_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('tokens_stripe_account_id_idx').on(table.stripeAccountId),
+}));
+
+export type Token = typeof tokensTable.$inferSelect;
+export type NewToken = typeof tokensTable.$inferInsert;
+
+export const confirmationTokensTable = pgTable('confirmation_tokens', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeTokenId: text('stripe_token_id').notNull().unique(),
+  created: bigint('created', { mode: 'number' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('confirmation_tokens_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('confirmation_tokens_stripe_account_id_idx').on(table.stripeAccountId),
+}));
+
+export type ConfirmationToken = typeof confirmationTokensTable.$inferSelect;
+export type NewConfirmationToken = typeof confirmationTokensTable.$inferInsert;
+
+
+export const taxSettingsTable = pgTable("tax_settings", {
+  id: serial("id").primaryKey(),
+  accountId: integer("account_id").notNull().references(() => stripeAccounts.id).unique(), // your internal account id
+  taxMode: varchar("tax_mode", { length: 20 }).notNull(), // 'automatic' | 'manual' | 'disabled'
+  defaultTaxCode: varchar("default_tax_code", { length: 50 }), // Stripe Tax code for automatic mode
+  manualTaxPercent: numeric("manual_tax_percent", { precision: 5, scale: 2 }), // e.g. 18.00
+  requireAddress: boolean("require_address").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type TaxSetting = typeof taxSettingsTable.$inferSelect;
+export type NewTaxSetting = typeof taxSettingsTable.$inferInsert;
+
+/**
+ * Additional tax and shipping tables
+ */
+export const taxCodesTable = pgTable('tax_codes', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeTaxCodeId: text('stripe_tax_code_id').notNull().unique(),
+  name: text('name'),
+  description: text('description'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('tax_codes_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('tax_codes_stripe_account_id_idx').on(table.stripeAccountId),
+}));
+
+export type TaxCode = typeof taxCodesTable.$inferSelect;
+export type NewTaxCode = typeof taxCodesTable.$inferInsert;
+
+export const taxRatesTable = pgTable('tax_rates', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeTaxRateId: text('stripe_tax_rate_id').notNull().unique(),
+  displayName: text('display_name'),
+  jurisdiction: text('jurisdiction'),
+  country: varchar('country', { length: 2 }),
+  state: text('state'),
+  percentage: numeric('percentage', { precision: 5, scale: 2 }),
+  inclusive: boolean('inclusive').default(false),
+  active: boolean('active').default(true),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('tax_rates_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('tax_rates_stripe_account_id_idx').on(table.stripeAccountId),
+}));
+
+export type TaxRate = typeof taxRatesTable.$inferSelect;
+export type NewTaxRate = typeof taxRatesTable.$inferInsert;
+
+export const shippingCodesTable = pgTable('shipping_codes', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeShippingCodeId: text('stripe_shipping_code_id').notNull().unique(),
+  name: text('name'),
+  description: text('description'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('shipping_codes_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('shipping_codes_stripe_account_id_idx').on(table.stripeAccountId),
+}));
+
+export type ShippingCode = typeof shippingCodesTable.$inferSelect;
+export type NewShippingCode = typeof shippingCodesTable.$inferInsert;
+
+export const shippingRatesTable = pgTable('shipping_rates', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeShippingRateId: text('stripe_shipping_rate_id').notNull().unique(),
+  displayName: text('display_name'),
+  fixedAmount: bigint('fixed_amount', { mode: 'number' }),
+  currency: varchar('currency', { length: 3 }),
+  deliveryEstimate: text('delivery_estimate'),
+  taxBehavior: text('tax_behavior'),
+  type: text('type'),
+  active: boolean('active').default(true),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('shipping_rates_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('shipping_rates_stripe_account_id_idx').on(table.stripeAccountId),
+}));
+
+export type ShippingRate = typeof shippingRatesTable.$inferSelect;
+export type NewShippingRate = typeof shippingRatesTable.$inferInsert;
+
+
+
+/**
+ * @table coupons
+ * @description Stores information about Stripe Coupons, which represent discounts.
+ */
+export const couponsTable = pgTable('coupons', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeCouponId: text('stripe_coupon_id').notNull().unique(), // The Stripe Coupon ID (e.g., '25OFF')
+  name: text('name'), // Internal name for the coupon.
+  amountOff: bigint('amount_off', { mode: 'number' }), // Amount (in cents) to be discounted.
+  percentOff: numeric('percent_off', { precision: 5, scale: 2 }), // Percent that will be discounted.
+  currency: varchar('currency', { length: 3 }), // Required if amount_off is present.
+  duration: text('duration').notNull(), // 'forever', 'once', or 'repeating'
+  durationInMonths: integer('duration_in_months'), // If duration is 'repeating', the number of months the coupon applies.
+  maxRedemptions: integer('max_redemptions'),
+  timesRedeemed: integer('times_redeemed').notNull().default(0),
+  valid: boolean('valid').notNull().default(true), // Whether the coupon is currently valid.
+  redeemBy: timestamp('redeem_by'), // Date after which the coupon can no longer be redeemed.
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('coupons_user_id_idx').on(table.userId),
+}));
+
+export type Coupon = typeof couponsTable.$inferSelect;
+export type NewCoupon = typeof couponsTable.$inferInsert;
+
+
+
+/**
+ * @table promotionCodes
+ * @description Stores information about Stripe Promotion Codes, which are customer-facing codes that map to a coupon.
+ */
+export const promotionCodesTable = pgTable('promotion_codes', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripePromotionCodeId: text('stripe_promotion_code_id').notNull().unique(),
+  stripeCouponId: text('stripe_coupon_id').notNull().references(() => couponsTable.stripeCouponId),
+  code: text('code').notNull(), // The customer-facing code.
+  active: boolean('active').notNull().default(true),
+  maxRedemptions: integer('max_redemptions'),
+  timesRedeemed: integer('times_redeemed').notNull().default(0),
+  expiresAt: timestamp('expires_at'), // The time at which the promotion code can no longer be redeemed.
+  // You could also add a 'stripeCustomerId' reference if a code is restricted to a specific customer.
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('promotion_codes_user_id_idx').on(table.userId),
+  stripeCouponIdIdx: index('promotion_codes_stripe_coupon_id_idx').on(table.stripeCouponId),
+}));
+
+export type PromotionCode = typeof promotionCodesTable.$inferSelect;
+export type NewPromotionCode = typeof promotionCodesTable.$inferInsert;
+
+
+/**
+ * @table notifications
+ * @description Stores notifications for users.
+ */
+export const notificationsTable = pgTable('notifications', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  type: text('type', { enum: ['sync_success', 'sync_failure', 'sync_partial'] }).notNull(),
+  message: text('message').notNull(),
+  isRead: boolean('is_read').default(false),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('notifications_user_id_idx').on(table.userId),
+}));
+
+export type Notification = typeof notificationsTable.$inferSelect;
+export type NewNotification = typeof notificationsTable.$inferInsert;
+
+
+export const settingsTable = pgTable('settings', {
+  settingsId: serial('settings_id').primaryKey(),
+  key: text('key').notNull(),
+  value: text('value').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+export type Setting = typeof settingsTable.$inferSelect;
+export type NewSetting = typeof settingsTable.$inferInsert;
+export type UpdateSetting = Partial<Omit<Setting, 'settingsId' | 'userId' | 'createdAt'>>;
+
+
+export const usersSettingsTable = pgTable('users_settings', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  settingId: integer('setting_id').notNull().references(() => settingsTable.settingsId),
+  value: text('value').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('users_settings_user_id_idx').on(table.userId),
+  settingIdIdx: index('users_settings_setting_id_idx').on(table.settingId),
+}));
+
+export type UserSetting = typeof usersSettingsTable.$inferSelect;
+export type NewUserSetting = typeof usersSettingsTable.$inferInsert;
+
+
+export const RbackPagesTable = pgTable('rback_pages', {
+  id: serial('id').primaryKey(),  
+  groupName: text('groupname').notNull().default('General'),
+  pagename: text('pagename').notNull().unique(),
+  pageUrl: text('pageurl').notNull().unique(),
+});
+
+export type RbackPage = typeof RbackPagesTable.$inferSelect;
+export type NewRbackPage = typeof RbackPagesTable.$inferInsert;
+
+export const RbackRolesPagesTable = pgTable('rback_roles_pages', {  
+  id: serial('id').primaryKey(),
+  roleId: integer('role_id').notNull().references(() => roles.id),
+  userid: integer('userid').references(() => users.id),
+  pageId: integer('page_id').notNull().references(() => RbackPagesTable.id),
+  isView: boolean('isview').default(false),
+  isAdd: boolean('isadd').default(false),
+  isEdit: boolean('isedit').default(false),
+  isDelete: boolean('isdelete').default(false),
+  isUpdate: boolean('isupdate').default(false),
+  filters: jsonb('filters').default('{"filters":[]}')
+}, (table) => ({
+  roleIdIdx: index('rback_roles_pages_role_id_idx').on(table.roleId),
+  userIdIdx: index('rback_roles_pages_userid_idx').on(table.userid),
+  pageIdIdx: index('rback_roles_pages_page_id_idx').on(table.pageId),
+}));
+
+export type RbackRolesPage = typeof RbackRolesPagesTable.$inferSelect;
+export type NewRbackRolesPage = typeof RbackRolesPagesTable.$inferInsert;
+
+
+/**
+ * Payment Methods Section
+ */
+export const paymentMethodsTable = pgTable('payment_methods', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripePaymentMethodId: text('stripe_payment_method_id').notNull().unique(),
+  type: text('type').notNull(),
+  stripeCustomerId: text('stripe_customer_id').references(() => customerTable.stripeCustomerId),
+  metadata: text('metadata'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('payment_methods_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('payment_methods_stripe_account_id_idx').on(table.stripeAccountId),
+  stripeCustomerIdIdx: index('payment_methods_stripe_customer_id_idx').on(table.stripeCustomerId),
+}));
+export type PaymentMethod = typeof paymentMethodsTable.$inferSelect;
+export type NewPaymentMethod = typeof paymentMethodsTable.$inferInsert;
+
+export const bankAccountsTable = pgTable('bank_accounts', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeBankAccountId: text('stripe_bank_account_id').notNull().unique(),
+  stripeCustomerId: text('stripe_customer_id').references(() => customerTable.stripeCustomerId),
+  accountHolderName: text('account_holder_name'),
+  accountNumber: text('account_number'),
+  routingNumber: text('routing_number'),
+  country: varchar('country', { length: 2 }),
+  currency: varchar('currency', { length: 3 }),
+  fingerprint: text('fingerprint'),
+  status: text('status'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('bank_accounts_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('bank_accounts_stripe_account_id_idx').on(table.stripeAccountId),
+  stripeCustomerIdIdx: index('bank_accounts_stripe_customer_id_idx').on(table.stripeCustomerId),
+}));
+export type BankAccount = typeof bankAccountsTable.$inferSelect;
+export type NewBankAccount = typeof bankAccountsTable.$inferInsert;
+
+export const cardsTable = pgTable('cards', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeCardId: text('stripe_card_id').notNull().unique(),
+  stripeCustomerId: text('stripe_customer_id').references(() => customerTable.stripeCustomerId),
+  brand: text('brand'),
+  last4: varchar('last4', { length: 4 }),
+  expMonth: integer('exp_month'),
+  expYear: integer('exp_year'),
+  fingerprint: text('fingerprint'),
+  country: varchar('country', { length: 2 }),
+  metadata: text('metadata'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('cards_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('cards_stripe_account_id_idx').on(table.stripeAccountId),
+  stripeCustomerIdIdx: index('cards_stripe_customer_id_idx').on(table.stripeCustomerId),
+}));
+export type Card = typeof cardsTable.$inferSelect;
+export type NewCard = typeof cardsTable.$inferInsert;
+
+export const cashBalanceTable = pgTable('cash_balance', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeCustomerId: text('stripe_customer_id').notNull().references(() => customerTable.stripeCustomerId),
+  available: bigint('available', { mode: 'number' }).notNull(),
+  currency: varchar('currency', { length: 3 }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('cash_balance_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('cash_balance_stripe_account_id_idx').on(table.stripeAccountId),
+  stripeCustomerIdIdx: index('cash_balance_stripe_customer_id_idx').on(table.stripeCustomerId),
+}));
+export type CashBalance = typeof cashBalanceTable.$inferSelect;
+export type NewCashBalance = typeof cashBalanceTable.$inferInsert;
+
+export const cashBalanceTransactionsTable = pgTable('cash_balance_transactions', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeCashTransactionId: text('stripe_cash_transaction_id').notNull().unique(),
+  stripeCustomerId: text('stripe_customer_id').notNull().references(() => customerTable.stripeCustomerId),
+  type: text('type'),
+  amount: bigint('amount', { mode: 'number' }),
+  currency: varchar('currency', { length: 3 }),
+  metadata: text('metadata'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('cash_balance_transactions_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('cash_balance_transactions_stripe_account_id_idx').on(table.stripeAccountId),
+  stripeCustomerIdIdx: index('cash_balance_transactions_stripe_customer_id_idx').on(table.stripeCustomerId),
+}));
+export type CashBalanceTransaction = typeof cashBalanceTransactionsTable.$inferSelect;
+export type NewCashBalanceTransaction = typeof cashBalanceTransactionsTable.$inferInsert;
+
+/**
+ * Billing Section
+ */
+export const creditNotesTable = pgTable('credit_notes', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeCreditNoteId: text('stripe_credit_note_id').notNull().unique(),
+  stripeInvoiceId: text('stripe_invoice_id').references(() => invoiceTable.stripeInvoiceId),
+  stripeCustomerId: text('stripe_customer_id').references(() => customerTable.stripeCustomerId),
+  amount: bigint('amount', { mode: 'number' }),
+  currency: varchar('currency', { length: 3 }),
+  status: text('status'),
+  reason: text('reason'),
+  memo: text('memo'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('credit_notes_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('credit_notes_stripe_account_id_idx').on(table.stripeAccountId),
+  stripeInvoiceIdIdx: index('credit_notes_stripe_invoice_id_idx').on(table.stripeInvoiceId),
+  stripeCustomerIdIdx: index('credit_notes_stripe_customer_id_idx').on(table.stripeCustomerId),
+}));
+export type CreditNote = typeof creditNotesTable.$inferSelect;
+export type NewCreditNote = typeof creditNotesTable.$inferInsert;
+
+export const customerBalanceTransactionsTable = pgTable('customer_balance_transactions', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeBalanceTransactionId: text('stripe_balance_transaction_id').notNull().unique(),
+  stripeCustomerId: text('stripe_customer_id').notNull().references(() => customerTable.stripeCustomerId),
+  type: text('type'),
+  amount: bigint('amount', { mode: 'number' }),
+  currency: varchar('currency', { length: 3 }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('customer_balance_transactions_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('customer_balance_transactions_stripe_account_id_idx').on(table.stripeAccountId),
+  stripeCustomerIdIdx: index('customer_balance_transactions_stripe_customer_id_idx').on(table.stripeCustomerId),
+}));
+export type CustomerBalanceTransaction = typeof customerBalanceTransactionsTable.$inferSelect;
+export type NewCustomerBalanceTransaction = typeof customerBalanceTransactionsTable.$inferInsert;
+
+export const invoiceItemsTable = pgTable('invoice_items', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeInvoiceItemId: text('stripe_invoice_item_id').notNull().unique(),
+  stripeInvoiceId: text('stripe_invoice_id').references(() => invoiceTable.stripeInvoiceId),
+  stripeCustomerId: text('stripe_customer_id').references(() => customerTable.stripeCustomerId),
+  stripePriceId: text('stripe_price_id').references(() => priceTable.stripePriceId),
+  amount: bigint('amount', { mode: 'number' }),
+  currency: varchar('currency', { length: 3 }),
+  description: text('description'),
+  metadata: text('metadata'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('invoice_items_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('invoice_items_stripe_account_id_idx').on(table.stripeAccountId),
+  stripeInvoiceIdIdx: index('invoice_items_stripe_invoice_id_idx').on(table.stripeInvoiceId),
+  stripeCustomerIdIdx: index('invoice_items_stripe_customer_id_idx').on(table.stripeCustomerId),
+  stripePriceIdIdx: index('invoice_items_stripe_price_id_idx').on(table.stripePriceId),
+}));
+export type InvoiceItem = typeof invoiceItemsTable.$inferSelect;
+export type NewInvoiceItem = typeof invoiceItemsTable.$inferInsert;
+
+export const checkoutSessionsTable = pgTable('checkout_sessions', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeSessionId: text('stripe_session_id').notNull().unique(),
+  stripeCustomerId: text('stripe_customer_id').references(() => customerTable.stripeCustomerId),
+  stripePaymentIntentId: text('stripe_payment_intent_id').references(() => paymentIntentsTable.paymentIntentId),
+  clientSecret: text('client_secret'),
+  status: text('status'),
+  url: text('url'),
+  amountTotal: bigint('amount_total', { mode: 'number' }),
+  currency: varchar('currency', { length: 3 }),
+  mode: text('mode'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('checkout_sessions_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('checkout_sessions_stripe_account_id_idx').on(table.stripeAccountId),
+  stripeCustomerIdIdx: index('checkout_sessions_stripe_customer_id_idx').on(table.stripeCustomerId),
+  stripePaymentIntentIdIdx: index('checkout_sessions_stripe_payment_intent_id_idx').on(table.stripePaymentIntentId),
+}));
+export type CheckoutSession = typeof checkoutSessionsTable.$inferSelect;
+export type NewCheckoutSession = typeof checkoutSessionsTable.$inferInsert;
+
+export const paymentLinksTable = pgTable('payment_links', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripePaymentLinkId: text('stripe_payment_link_id').notNull().unique(),
+  url: text('url'),
+  active: boolean('active').default(true),
+  metadata: text('metadata'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('payment_links_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('payment_links_stripe_account_id_idx').on(table.stripeAccountId),
+}));
+export type PaymentLink = typeof paymentLinksTable.$inferSelect;
+export type NewPaymentLink = typeof paymentLinksTable.$inferInsert;
+
+export const subscriptionItemsTable = pgTable('subscription_items', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeSubscriptionItemId: text('stripe_subscription_item_id').notNull().unique(),
+  stripeSubscriptionId: text('stripe_subscription_id').references(() => subscriptionTable.stripeSubscriptionId),
+  stripePriceId: text('stripe_price_id').references(() => priceTable.stripePriceId),
+  quantity: integer('quantity'),
+  metadata: text('metadata'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('subscription_items_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('subscription_items_stripe_account_id_idx').on(table.stripeAccountId),
+  stripeSubscriptionIdIdx: index('subscription_items_stripe_subscription_id_idx').on(table.stripeSubscriptionId),
+  stripePriceIdIdx: index('subscription_items_stripe_price_id_idx').on(table.stripePriceId),
+}));
+export type SubscriptionItem = typeof subscriptionItemsTable.$inferSelect;
+export type NewSubscriptionItem = typeof subscriptionItemsTable.$inferInsert;
+
+export const subscriptionSchedulesTable = pgTable('subscription_schedules', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeScheduleId: text('stripe_schedule_id').notNull().unique(),
+  stripeCustomerId: text('stripe_customer_id').references(() => customerTable.stripeCustomerId),
+  stripeSubscriptionId: text('stripe_subscription_id').references(() => subscriptionTable.stripeSubscriptionId),
+  status: text('status'),
+  currentPhase: integer('current_phase'),
+  metadata: text('metadata'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('subscription_schedules_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('subscription_schedules_stripe_account_id_idx').on(table.stripeAccountId),
+  stripeCustomerIdIdx: index('subscription_schedules_stripe_customer_id_idx').on(table.stripeCustomerId),
+  stripeSubscriptionIdIdx: index('subscription_schedules_stripe_subscription_id_idx').on(table.stripeSubscriptionId),
+}));
+export type SubscriptionSchedule = typeof subscriptionSchedulesTable.$inferSelect;
+export type NewSubscriptionSchedule = typeof subscriptionSchedulesTable.$inferInsert;
+
+export const taxIdsTable = pgTable('tax_ids', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeTaxId: text('stripe_tax_id').notNull().unique(),
+  stripeCustomerId: text('stripe_customer_id').notNull().references(() => customerTable.stripeCustomerId),
+  type: text('type'),
+  value: text('value'),
+  country: varchar('country', { length: 2 }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('tax_ids_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('tax_ids_stripe_account_id_idx').on(table.stripeAccountId),
+  stripeCustomerIdIdx: index('tax_ids_stripe_customer_id_idx').on(table.stripeCustomerId),
+}));
+export type TaxId = typeof taxIdsTable.$inferSelect;
+export type NewTaxId = typeof taxIdsTable.$inferInsert;
+
+export const testClocksTable = pgTable('test_clocks', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeClockId: text('stripe_clock_id').notNull().unique(),
+  frozenTime: bigint('frozen_time', { mode: 'number' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('test_clocks_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('test_clocks_stripe_account_id_idx').on(table.stripeAccountId),
+}));
+export type TestClock = typeof testClocksTable.$inferSelect;
+export type NewTestClock = typeof testClocksTable.$inferInsert;
+
+/**
+ * Connect Section
+ */
+export const connectAccountsTable = pgTable('connect_accounts', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeConnectAccountId: text('stripe_connect_account_id').notNull().unique(),
+  type: text('type'),
+  businessType: text('business_type'),
+  country: varchar('country', { length: 2 }),
+  email: text('email'),
+  chargesEnabled: boolean('charges_enabled').default(false),
+  payoutsEnabled: boolean('payouts_enabled').default(false),
+  metadata: text('metadata'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('connect_accounts_user_id_idx').on(table.userId),
+}));
+export type ConnectAccount = typeof connectAccountsTable.$inferSelect;
+export type NewConnectAccount = typeof connectAccountsTable.$inferInsert;
+
+export const applicationFeesTable = pgTable('application_fees', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeApplicationFeeId: text('stripe_application_fee_id').notNull().unique(),
+  stripeChargeId: text('stripe_charge_id').references(() => chargesTable.stripeChargeId),
+  amount: bigint('amount', { mode: 'number' }),
+  currency: varchar('currency', { length: 3 }),
+  amountRefunded: bigint('amount_refunded', { mode: 'number' }).default(0),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('application_fees_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('application_fees_stripe_account_id_idx').on(table.stripeAccountId),
+  stripeChargeIdIdx: index('application_fees_stripe_charge_id_idx').on(table.stripeChargeId),
+}));
+export type ApplicationFee = typeof applicationFeesTable.$inferSelect;
+export type NewApplicationFee = typeof applicationFeesTable.$inferInsert;
+
+export const topUpsTable = pgTable('top_ups', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeTopUpId: text('stripe_top_up_id').notNull().unique(),
+  amount: bigint('amount', { mode: 'number' }),
+  currency: varchar('currency', { length: 3 }),
+  status: text('status'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('top_ups_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('top_ups_stripe_account_id_idx').on(table.stripeAccountId),
+}));
+export type TopUp = typeof topUpsTable.$inferSelect;
+export type NewTopUp = typeof topUpsTable.$inferInsert;
+
+export const transfersTable = pgTable('transfers', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeTransferId: text('stripe_transfer_id').notNull().unique(),
+  amount: bigint('amount', { mode: 'number' }),
+  currency: varchar('currency', { length: 3 }),
+  destination: text('destination'),
+  status: text('status'),
+  metadata: text('metadata'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('transfers_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('transfers_stripe_account_id_idx').on(table.stripeAccountId),
+}));
+export type Transfer = typeof transfersTable.$inferSelect;
+export type NewTransfer = typeof transfersTable.$inferInsert;
+
+/**
+ * Stripe Plans and Quotes
+ */
+export const plansTable = pgTable('plans', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripePlanId: text('stripe_plan_id').notNull().unique(),
+  stripePriceId: text('stripe_price_id').references(() => priceTable.stripePriceId),
+  amount: bigint('amount', { mode: 'number' }),
+  currency: varchar('currency', { length: 3 }),
+  interval: text('interval'),
+  intervalCount: integer('interval_count'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('plans_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('plans_stripe_account_id_idx').on(table.stripeAccountId),
+  stripePriceIdIdx: index('plans_stripe_price_id_idx').on(table.stripePriceId),
+}));
+export type Plan = typeof plansTable.$inferSelect;
+export type NewPlan = typeof plansTable.$inferInsert;
+
+export const quotesTable = pgTable('quotes', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeQuoteId: text('stripe_quote_id').notNull().unique(),
+  stripeCustomerId: text('stripe_customer_id').references(() => customerTable.stripeCustomerId),
+  status: text('status'),
+  amountTotal: bigint('amount_total', { mode: 'number' }),
+  currency: varchar('currency', { length: 3 }),
+  url: text('url'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('quotes_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('quotes_stripe_account_id_idx').on(table.stripeAccountId),
+  stripeCustomerIdIdx: index('quotes_stripe_customer_id_idx').on(table.stripeCustomerId),
+}));
+export type Quote = typeof quotesTable.$inferSelect;
+export type NewQuote = typeof quotesTable.$inferInsert;
+
+/**
+ * Advanced & Specialized Resources
+ */
+export const metersTable = pgTable('meters', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeMeterId: text('stripe_meter_id').notNull().unique(),
+  eventName: text('event_name'),
+  displayName: text('display_name'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('meters_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('meters_stripe_account_id_idx').on(table.stripeAccountId),
+}));
+export type Meter = typeof metersTable.$inferSelect;
+export type NewMeter = typeof metersTable.$inferInsert;
+
+export const meterEventsTable = pgTable('meter_events', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeMeterEventId: text('stripe_meter_event_id').notNull().unique(),
+  stripeMeterId: text('stripe_meter_id').references(() => metersTable.stripeMeterId),
+  value: numeric('value', { precision: 12, scale: 6 }),
+  timestamp: bigint('timestamp', { mode: 'number' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('meter_events_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('meter_events_stripe_account_id_idx').on(table.stripeAccountId),
+  stripeMeterIdIdx: index('meter_events_stripe_meter_id_idx').on(table.stripeMeterId),
+}));
+export type MeterEvent = typeof meterEventsTable.$inferSelect;
+export type NewMeterEvent = typeof meterEventsTable.$inferInsert;
+
+export const treasuryAccountsTable = pgTable('treasury_accounts', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeTreasuryAccountId: text('stripe_treasury_account_id').notNull().unique(),
+  status: text('status'),
+  currency: varchar('currency', { length: 3 }),
+  balance: bigint('balance', { mode: 'number' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('treasury_accounts_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('treasury_accounts_stripe_account_id_idx').on(table.stripeAccountId),
+}));
+export type TreasuryAccount = typeof treasuryAccountsTable.$inferSelect;
+export type NewTreasuryAccount = typeof treasuryAccountsTable.$inferInsert;
+
+export const treasuryTransactionsTable = pgTable('treasury_transactions', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeTreasuryTransactionId: text('stripe_treasury_transaction_id').notNull().unique(),
+  stripeTreasuryAccountId: text('stripe_treasury_account_id').references(() => treasuryAccountsTable.stripeTreasuryAccountId),
+  type: text('type'),
+  amount: bigint('amount', { mode: 'number' }),
+  currency: varchar('currency', { length: 3 }),
+  status: text('status'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('treasury_transactions_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('treasury_transactions_stripe_account_id_idx').on(table.stripeAccountId),
+  stripeTreasuryAccountIdIdx: index('treasury_transactions_stripe_treasury_account_id_idx').on(table.stripeTreasuryAccountId),
+}));
+export type TreasuryTransaction = typeof treasuryTransactionsTable.$inferSelect;
+export type NewTreasuryTransaction = typeof treasuryTransactionsTable.$inferInsert;
+
+export const issuingCardholdersTable = pgTable('issuing_cardholders', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeCardholderId: text('stripe_cardholder_id').notNull().unique(),
+  name: text('name'),
+  email: text('email'),
+  status: text('status'),
+  type: text('type'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('issuing_cardholders_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('issuing_cardholders_stripe_account_id_idx').on(table.stripeAccountId),
+}));
+export type IssuingCardholder = typeof issuingCardholdersTable.$inferSelect;
+export type NewIssuingCardholder = typeof issuingCardholdersTable.$inferInsert;
+
+export const issuingCardsTable = pgTable('issuing_cards', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeIssuingCardId: text('stripe_issuing_card_id').notNull().unique(),
+  stripeCardholderId: text('stripe_cardholder_id').references(() => issuingCardholdersTable.stripeCardholderId),
+  status: text('status'),
+  type: text('type'),
+  last4: varchar('last4', { length: 4 }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('issuing_cards_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('issuing_cards_stripe_account_id_idx').on(table.stripeAccountId),
+  stripeCardholderIdIdx: index('issuing_cards_stripe_cardholder_id_idx').on(table.stripeCardholderId),
+}));
+export type IssuingCard = typeof issuingCardsTable.$inferSelect;
+export type NewIssuingCard = typeof issuingCardsTable.$inferInsert;
+
+export const issuingAuthorizationsTable = pgTable('issuing_authorizations', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeAuthorizationId: text('stripe_authorization_id').notNull().unique(),
+  stripeIssuingCardId: text('stripe_issuing_card_id').references(() => issuingCardsTable.stripeIssuingCardId),
+  status: text('status'),
+  amount: bigint('amount', { mode: 'number' }),
+  currency: varchar('currency', { length: 3 }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('issuing_authorizations_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('issuing_authorizations_stripe_account_id_idx').on(table.stripeAccountId),
+  stripeIssuingCardIdIdx: index('issuing_authorizations_stripe_issuing_card_id_idx').on(table.stripeIssuingCardId),
+}));
+export type IssuingAuthorization = typeof issuingAuthorizationsTable.$inferSelect;
+export type NewIssuingAuthorization = typeof issuingAuthorizationsTable.$inferInsert;
+
+export const terminalReadersTable = pgTable('terminal_readers', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeReaderId: text('stripe_reader_id').notNull().unique(),
+  label: text('label'),
+  status: text('status'),
+  locationId: text('location_id'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('terminal_readers_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('terminal_readers_stripe_account_id_idx').on(table.stripeAccountId),
+}));
+export type TerminalReader = typeof terminalReadersTable.$inferSelect;
+export type NewTerminalReader = typeof terminalReadersTable.$inferInsert;
+
+export const verificationSessionsTable = pgTable('verification_sessions', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeSessionId: text('stripe_session_id').notNull().unique(),
+  status: text('status'),
+  type: text('type'),
+  url: text('url'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('verification_sessions_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('verification_sessions_stripe_account_id_idx').on(table.stripeAccountId),
+}));
+export type VerificationSession = typeof verificationSessionsTable.$inferSelect;
+export type NewVerificationSession = typeof verificationSessionsTable.$inferInsert;
+
+export const financialConnectionsAccountsTable = pgTable('financial_connections_accounts', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  stripeAccountId: integer('stripe_account_id').notNull().references(() => stripeAccounts.id),
+  stripeFinancialAccountId: text('stripe_financial_account_id').notNull().unique(),
+  institutionName: text('institution_name'),
+  accountOwner: text('account_owner'),
+  status: text('status'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('financial_connections_accounts_user_id_idx').on(table.userId),
+  stripeAccountIdIdx: index('financial_connections_accounts_stripe_account_id_idx').on(table.stripeAccountId),
+}));
+export type FinancialConnectionsAccount = typeof financialConnectionsAccountsTable.$inferSelect;
+export type NewFinancialConnectionsAccount = typeof financialConnectionsAccountsTable.$inferInsert;
+
+// Note: You might want to add a relation from subscriptions or invoices to promotion codes
+// to track which promotion was used for a specific subscription/invoice.
+// Relations for easier querying
+/**
+ * @relation rolesRelations
+ * @description Defines the one-to-many relationship between roles and users.
+ */
+export const rolesRelations = relations(roles, ({ many }) => ({
+  users: many(users),
+}));
+
+/**
+ * @relation usersRelations
+ * @description Defines relationships for the users table, including one-to-one with roles and one-to-many with Stripe accounts, customers, payment intents, invoices, subscriptions, products, prices, and disputes.
+ */
+export const usersRelations = relations(users, ({ one, many }) => ({
+  role: one(roles, {
+    fields: [users.roleId],
+    references: [roles.id],
+  }),
+  stripeAccounts: many(stripeAccounts),
+  stripeKeys: many(stripeKeys),
+  customers: many(customerTable),
+  paymentIntents: many(paymentIntentsTable),
+  invoices: many(invoiceTable),
+  subscriptions: many(subscriptionTable),
+  products: many(productTable),
+  prices: many(priceTable),
+  coupons: many(couponsTable),
+  promotionCodes: many(promotionCodesTable),
+  taxCodes: many(taxCodesTable),
+  taxRates: many(taxRatesTable),
+  shippingCodes: many(shippingCodesTable),
+  shippingRates: many(shippingRatesTable),
+  disputes: many(disputeTable),
+  notifications: many(notificationsTable),
+  usersSettings: many(usersSettingsTable),
+  rbackRolesPages: many(RbackRolesPagesTable),
+  balances: many(balanceTable),
+  balanceTransactions: many(balanceTransactionsTable),
+  charges: many(chargesTable),
+  customerSessions: many(customerSessionsTable),
+  events: many(eventsTable),
+  files: many(filesTable),
+  fileLinks: many(fileLinksTable),
+  mandates: many(mandatesTable),
+  setupIntents: many(setupIntentsTable),
+  setupAttempts: many(setupAttemptsTable),
+  payouts: many(payoutsTable),
+  refunds: many(refundsTable),
+  tokens: many(tokensTable),
+  confirmationTokens: many(confirmationTokensTable),
+  paymentMethods: many(paymentMethodsTable),
+  bankAccounts: many(bankAccountsTable),
+  cards: many(cardsTable),
+  cashBalances: many(cashBalanceTable),
+  cashBalanceTransactions: many(cashBalanceTransactionsTable),
+  creditNotes: many(creditNotesTable),
+  customerBalanceTransactions: many(customerBalanceTransactionsTable),
+  invoiceItems: many(invoiceItemsTable),
+  checkoutSessions: many(checkoutSessionsTable),
+  paymentLinks: many(paymentLinksTable),
+  subscriptionItems: many(subscriptionItemsTable),
+  subscriptionSchedules: many(subscriptionSchedulesTable),
+  taxIds: many(taxIdsTable),
+  testClocks: many(testClocksTable),
+  connectAccounts: many(connectAccountsTable),
+  applicationFees: many(applicationFeesTable),
+  topUps: many(topUpsTable),
+  transfers: many(transfersTable),
+  plans: many(plansTable),
+  quotes: many(quotesTable),
+  meters: many(metersTable),
+  meterEvents: many(meterEventsTable),
+  treasuryAccounts: many(treasuryAccountsTable),
+  treasuryTransactions: many(treasuryTransactionsTable),
+  issuingCardholders: many(issuingCardholdersTable),
+  issuingCards: many(issuingCardsTable),
+  issuingAuthorizations: many(issuingAuthorizationsTable),
+  terminalReaders: many(terminalReadersTable),
+  verificationSessions: many(verificationSessionsTable),
+  financialConnectionsAccounts: many(financialConnectionsAccountsTable),
+}));
+
+/**
+ * @relation stripeAccountsRelations
+ * @description Defines the one-to-one relationship between Stripe accounts and users, and one-to-many with analytics cache.
+ */
+export const stripeAccountsRelations = relations(stripeAccounts, ({ one, many }) => ({
+  user: one(users, {
+    fields: [stripeAccounts.userId],
+    references: [users.id],
+  }),
+  taxSetting: one(taxSettingsTable, {
+    fields: [stripeAccounts.id],
+    references: [taxSettingsTable.accountId],
+  }),
+  analyticsCache: many(analyticsCache),
+  taxCodes: many(taxCodesTable),
+  taxRates: many(taxRatesTable),
+  shippingCodes: many(shippingCodesTable),
+  shippingRates: many(shippingRatesTable),
+}));
+
+/**
+ * @relation stripeKeysRelations
+ * @description Defines the one-to-one relationship between Stripe API keys and users.
+ */
+export const stripeKeysRelations = relations(stripeKeys, ({ one }) => ({
+  user: one(users, {
+    fields: [stripeKeys.userId],
+    references: [users.id],
+  }),
+}));
+
+/**
+ * @relation analyticsCacheRelations
+ * @description Defines the one-to-one relationship between analytics cache entries and Stripe accounts.
+ */
+export const analyticsCacheRelations = relations(analyticsCache, ({ one }) => ({
+  stripeAccount: one(stripeAccounts, {
+    fields: [analyticsCache.accountId],
+    references: [stripeAccounts.id],
+  }),
+}));
+
+/**
+ * @relation customersRelations
+ * @description Defines relationships for the customerTable, including one-to-one with users and one-to-many with payment intents, invoices, and subscriptions.
+ */
+export const customersRelations = relations(customerTable, ({ one, many }) => ({
+  user: one(users, {
+    fields: [customerTable.userId],
+    references: [users.id],
+  }),
+  paymentIntents: many(paymentIntentsTable), // Add relation to payment intents
+  invoices: many(invoiceTable), // Add relation to invoices
+  subscriptions: many(subscriptionTable), // Add relation to subscriptions
+}));
+
+/**
+ * @relation paymentIntentsRelations
+ * @description Defines the one-to-one relationships between payment intents and users, and payment intents and customers.
+ */
+export const paymentIntentsRelations = relations(paymentIntentsTable, ({ one }) => ({
+  user: one(users, {
+    fields: [paymentIntentsTable.userId],
+    references: [users.id],
+  }),
+  customer: one(customerTable, {
+    fields: [paymentIntentsTable.stripeCustomerId],
+    references: [customerTable.stripeCustomerId],
+  }),
+}));
+
+/**
+ * @relation invoicesRelations
+ * @description Defines the one-to-one relationships between invoices and users, and invoices and customers.
+ */
+export const invoicesRelations = relations(invoiceTable, ({ one }) => ({
+  user: one(users, {
+    fields: [invoiceTable.userId],
+    references: [users.id],
+  }),
+  customer: one(customerTable, {
+    fields: [invoiceTable.stripeCustomerId],
+    references: [customerTable.stripeCustomerId],
+  }),
+}));
+
+/**
+ * @relation subscriptionsRelations
+ * @description Defines the one-to-one relationships between subscriptions and users, and subscriptions and customers.
+ */
+export const subscriptionsRelations = relations(subscriptionTable, ({ one }) => ({
+  user: one(users, {
+    fields: [subscriptionTable.userId],
+    references: [users.id],
+  }),
+  customer: one(customerTable, {
+    fields: [subscriptionTable.stripeCustomerId],
+    references: [customerTable.stripeCustomerId],
+  }),
+}));
+
+/**
+ * @relation productRelations
+ * @description Defines the one-to-one relationship between products and users, and one-to-many with prices.
+ */
+export const productRelations = relations(productTable, ({ one, many }) => ({
+  user: one(users, {
+    fields: [productTable.userId],
+    references: [users.id],
+  }),
+  prices: many(priceTable),
+}));
+
+/**
+ * @relation priceRelations
+ * @description Defines the one-to-one relationship between prices and users, and prices and products.
+ */
+export const priceRelations = relations(priceTable, ({ one }) => ({
+  user: one(users, {
+    fields: [priceTable.userId],
+    references: [users.id],
+  }),
+  product: one(productTable, {
+    fields: [priceTable.stripeProductId],
+    references: [productTable.stripeProductId],
+  }),
+}));
+
+/**
+ * @relation disputeRelations
+ * @description Defines the one-to-one relationship between disputes and users.
+ */
+export const disputeRelations = relations(disputeTable, ({ one }) => ({
+  user: one(users, {
+    fields: [disputeTable.userId],
+    references: [users.id],
+  }),
+  // If you had a chargeTable, you could link to it here
+  // charge: one(chargeTable, {
+  //   fields: [disputeTable.stripeChargeId],
+  //   references: [chargeTable.stripeChargeId],
+  // }),
+}));
+
+/**
+ * @relation couponsRelations
+ * @description Defines relationships for the couponsTable.
+ */
+export const couponsRelations = relations(couponsTable, ({ one, many }) => ({
+  user: one(users, {
+    fields: [couponsTable.userId],
+    references: [users.id],
+  }),
+  promotionCodes: many(promotionCodesTable), // A coupon can have many promotion codes.
+}));
+
+/**
+ * @relation promotionCodesRelations
+ * @description Defines relationships for the promotionCodesTable.
+ */
+export const promotionCodesRelations = relations(promotionCodesTable, ({ one }) => ({
+  user: one(users, {
+    fields: [promotionCodesTable.userId],
+    references: [users.id],
+  }),
+  coupon: one(couponsTable, {
+    fields: [promotionCodesTable.stripeCouponId],
+    references: [couponsTable.stripeCouponId],
+  }),
+}));
+
+/**
+ * @relation taxSettingsRelations
+ * @description Defines relationships for the taxSettingsTable.
+ */
+export const taxSettingsRelations = relations(taxSettingsTable, ({ one }) => ({
+  stripeAccount: one(stripeAccounts, {
+    fields: [taxSettingsTable.accountId],
+    references: [stripeAccounts.id],
+  }),
+}));
+
+export const taxCodesRelations = relations(taxCodesTable, ({ one }) => ({
+  user: one(users, {
+    fields: [taxCodesTable.userId],
+    references: [users.id],
+  }),
+  stripeAccount: one(stripeAccounts, {
+    fields: [taxCodesTable.stripeAccountId],
+    references: [stripeAccounts.id],
+  }),
+}));
+
+export const taxRatesRelations = relations(taxRatesTable, ({ one }) => ({
+  user: one(users, {
+    fields: [taxRatesTable.userId],
+    references: [users.id],
+  }),
+  stripeAccount: one(stripeAccounts, {
+    fields: [taxRatesTable.stripeAccountId],
+    references: [stripeAccounts.id],
+  }),
+}));
+
+export const shippingCodesRelations = relations(shippingCodesTable, ({ one }) => ({
+  user: one(users, {
+    fields: [shippingCodesTable.userId],
+    references: [users.id],
+  }),
+  stripeAccount: one(stripeAccounts, {
+    fields: [shippingCodesTable.stripeAccountId],
+    references: [stripeAccounts.id],
+  }),
+}));
+
+export const shippingRatesRelations = relations(shippingRatesTable, ({ one }) => ({
+  user: one(users, {
+    fields: [shippingRatesTable.userId],
+    references: [users.id],
+  }),
+  stripeAccount: one(stripeAccounts, {
+    fields: [shippingRatesTable.stripeAccountId],
+    references: [stripeAccounts.id],
+  }),
+}));
+
+export const settingsTableRelations = relations(settingsTable, ({ many }) => ({
+  usersSettings: many(usersSettingsTable),
+}));
+
+export const usersSettingsRelations = relations(usersSettingsTable, ({ one }) => ({
+  user: one(users, {
+    fields: [usersSettingsTable.userId],
+    references: [users.id],
+  }),
+  setting: one(settingsTable, {
+    fields: [usersSettingsTable.settingId],
+    references: [settingsTable.settingsId],
+  }),
+}));
+
+export const RbackPagesTableRelations = relations(RbackPagesTable, ({ many }) => ({
+  rolesPages: many(RbackRolesPagesTable),
+}));
+
+export const RbackRolesPagesTableRelations = relations(RbackRolesPagesTable, ({ one }) => ({
+  role: one(roles, {
+    fields: [RbackRolesPagesTable.roleId],
+    references: [roles.id],
+  }),
+  user: one(users, {
+    fields: [RbackRolesPagesTable.userid],
+    references: [users.id],
+  }),
+  page: one(RbackPagesTable, {
+    fields: [RbackRolesPagesTable.pageId],
+    references: [RbackPagesTable.id],
+  }),
+}));
+
+// This would typically be done by adding a `stripePromotionCodeId` to those tables.

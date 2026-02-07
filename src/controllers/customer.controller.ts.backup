@@ -1,0 +1,412 @@
+import type { Request, Response, NextFunction } from 'express';
+import { db } from '../db';
+import { customerTable, chargesTable } from '../db/schema';
+import { eq, and, sql, or, desc, asc, ilike } from 'drizzle-orm';
+import { getOrCreateStripeClient } from '../services/client.service';
+import { getUserFromToken } from '../utils/auth.utils';
+
+/**
+ * @typedef {object} LocalCustomer
+ * @property {integer} id
+ * @property {integer} userId
+ * @property {integer} stripeAccountId
+ * @property {string} stripeCustomerId
+ * @property {string} email
+ * @property {string} name
+ * @property {string} created_at
+ */
+
+/**
+ * @typedef {object} StripeCustomer
+ * @property {string} id
+ * @property {string} object
+ * @property {string} email
+ * @property {string} name
+ * @property {string} description
+ * @property {object} metadata
+ * @property {integer} created
+ * @property {string} currency
+ */
+
+/*************  ✨ Windsurf Command 🌟  *************/
+export const listCustomers = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  const user = await getUserFromToken(req);
+  if (!user) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+  if (!user) {res.status(401).json({ error: 'Unauthorized' }); return;}
+
+  const {
+    page = req.query.page || '1',
+    pageSize = req.query.pageSize || '10',
+    accountId = req.query.accountId as string | undefined,
+    query = req.query.query as string | undefined,
+    sort = req.query.sort as string | undefined,
+    startDate = req.query.startDate as string | undefined,
+    endDate = req.query.endDate as string | undefined,
+    period = req.query.period as string | undefined,
+    year = req.query.year as string | undefined,
+    month = req.query.month as string | undefined,
+    email = req.query.email as string | undefined,
+    name = req.query.name as string | undefined,
+    liveMode = req.query.liveMode as string | undefined,
+    page: string = req.query.page || '1',
+    pageSize: string = req.query.pageSize || '10',
+    accountId: string | undefined = req.query.accountId,
+    query: string | undefined = req.query.query,
+    sort: string | undefined = req.query.sort,
+    startDate: string | undefined = req.query.startDate,
+    endDate: string | undefined = req.query.endDate,
+    period: string | undefined = req.query.period,
+    year: string | undefined = req.query.year,
+    month: string | undefined = req.query.month,
+    email: string | undefined = req.query.email,
+    name: string | undefined = req.query.name,
+    liveMode: string | undefined = req.query.liveMode
+  } = req.query;
+
+  const conditions = [eq(customerTable.userId, user.id)];
+
+  if (accountId) {
+    conditions.push(eq(customerTable.stripeAccountId, Number(accountId)));
+  }
+
+  if (query) {
+    const searchCondition = or(
+      ilike(customerTable.name, `%${query}%`),
+      ilike(customerTable.email, `%${query}%`)
+    );
+    if (searchCondition) {
+      conditions.push(searchCondition);
+    }
+  }
+
+  if (email) {
+    conditions.push(eq(customerTable.email, email));
+  }
+
+  if (name) {
+    conditions.push(eq(customerTable.name, name));
+  }
+
+  if (liveMode !== undefined) {
+    conditions.push(eq(customerTable.liveMode, liveMode === 'true'));
+  }
+
+  let orderBy;
+  if (sort) {
+    const [field, direction] = (sort as string).split(':');
+    const isDesc = direction === 'desc';
+    switch (field) {
+      case 'name':
+        orderBy = isDesc ? desc(customerTable.name) : asc(customerTable.name);
+        break;
+      case 'email':
+        orderBy = isDesc ? desc(customerTable.email) : asc(customerTable.email);
+        break;
+      case 'created':
+        orderBy = isDesc ? desc(customerTable.created) : asc(customerTable.created);
+        break;
+      case 'createdAt':
+        orderBy = isDesc ? desc(customerTable.createdAt) : asc(customerTable.createdAt);
+        break;
+      default:
+        orderBy = desc(customerTable.id);
+    }
+  } else {
+    orderBy = desc(customerTable.id);
+  }
+
+  if (year) {
+    const yearNum = Number(year);
+    const monthNum = month ? Number(month) : undefined;
+    
+    let startOfPeriod: Date;
+    let endOfPeriod: Date;
+    
+    if (monthNum && monthNum >= 1 && monthNum <= 12) {
+      // Filter by specific month
+      startOfPeriod = new Date(Date.UTC(yearNum, monthNum - 1, 1, 0, 0, 0, 0));
+      endOfPeriod = new Date(Date.UTC(yearNum, monthNum, 0, 23, 59, 59, 999));
+    } else {
+      // Filter by entire year
+      startOfPeriod = new Date(Date.UTC(yearNum, 0, 1, 0, 0, 0, 0));
+      endOfPeriod = new Date(Date.UTC(yearNum, 11, 31, 23, 59, 59, 999));
+    }
+    
+    const startTimestamp = Math.floor(startOfPeriod.getTime() / 1000);
+    const endTimestamp = Math.floor(endOfPeriod.getTime() / 1000);
+    conditions.push(sql`${customerTable.created} >= ${startTimestamp}`);
+    conditions.push(sql`${customerTable.created} <= ${endTimestamp}`);
+  }
+  
+  if (startDate) {
+    const startTimestamp = Math.floor(new Date(startDate).getTime() / 1000);
+    conditions.push(sql`${customerTable.created} >= ${startTimestamp}`);
+  }
+  
+  if (endDate) {
+    const endTimestamp = Math.floor(new Date(endDate).getTime() / 1000);
+    conditions.push(sql`${customerTable.created} <= ${endTimestamp}`);
+  }
+
+  if (period && period !== 'custom') {
+    const now = new Date();
+    const periodMap: Record<string, number> = { '7d': 7, '30d': 30, '90d': 90, '1y': 365 };
+    
+    if (periodMap[period as string]) {
+      const daysAgo = new Date(now.getTime() - (periodMap[period as string] * 24 * 60 * 60 * 1000));
+      conditions.push(sql`${customerTable.createdAt} >= ${daysAgo}`);
+      conditions.push(sql`${customerTable.createdAt} <= ${now}`);
+    }
+  }
+
+  try {
+    const pageNumNum = Math.max(1, Number(page));
+    const pageSizeNum = Math.min(100, Math.max(1, Number(pageSize)));
+
+    const conditions = [eq(customerTable.userId, user.id)];
+
+    if (accountId) {
+      conditions.push(eq(customerTable.stripeAccountId, Number(accountId)));
+    }
+
+    if (query) {
+      const searchCondition = or(
+        ilike(customerTable.name, `%${query}%`),
+        ilike(customerTable.email, `%${query}%`)
+      );
+      if (searchCondition) {
+        conditions.push(searchCondition);
+      }
+    }
+
+    if (email) {conditions.push(eq(customerTable.email, email));}
+    if (name) {conditions.push(eq(customerTable.name, name));}
+    if (liveMode !== undefined) {conditions.push(eq(customerTable.liveMode, liveMode === 'true'));}
+
+    // Add year and month filters (if month is empty, filters all by selected year)
+    if (year) {
+      const yearNum = Number(year);
+      const monthNum = month ? Number(month) : undefined;
+      
+      let startOfPeriod: Date;
+      let endOfPeriod: Date;
+      
+      if (monthNum && monthNum >= 1 && monthNum <= 12) {
+        // Filter by specific month
+        startOfPeriod = new Date(Date.UTC(yearNum, monthNum - 1, 1, 0, 0, 0, 0));
+        endOfPeriod = new Date(Date.UTC(yearNum, monthNum, 0, 23, 59, 59, 999));
+      } else {
+        // Filter by entire year
+        startOfPeriod = new Date(Date.UTC(yearNum, 0, 1, 0, 0, 0, 0));
+        endOfPeriod = new Date(Date.UTC(yearNum, 11, 31, 23, 59, 59, 999));
+      }
+      
+      const startTimestamp = Math.floor(startOfPeriod.getTime() / 1000);
+      const endTimestamp = Math.floor(endOfPeriod.getTime() / 1000);
+      conditions.push(sql`${customerTable.created} >= ${startTimestamp}`);
+      conditions.push(sql`${customerTable.created} <= ${endTimestamp}`);
+    }
+    
+    if (startDate) {
+      const startTimestamp = Math.floor(new Date(startDate).getTime() / 1000);
+      conditions.push(sql`${customerTable.created} >= ${startTimestamp}`);
+    }
+    
+    if (endDate) {
+      const endTimestamp = Math.floor(new Date(endDate).getTime() / 1000);
+      conditions.push(sql`${customerTable.created} <= ${endTimestamp}`);
+    }
+
+    // Add createdAt filtering
+    if (period && period !== 'custom') {
+      const now = new Date();
+      const periodMap: Record<string, number> = { '7d': 7, '30d': 30, '90d': 90, '1y': 365 };
+      
+      if (periodMap[period as string]) {
+        const daysAgo = new Date(now.getTime() - (periodMap[period as string] * 24 * 60 * 60 * 1000));
+        conditions.push(sql`${customerTable.createdAt} >= ${daysAgo}`);
+        conditions.push(sql`${customerTable.createdAt} <= ${now}`);
+      }
+    }
+
+    let orderBy;
+    if (sort) {
+      const [field, direction] = (sort as string).split(':');
+      const isDesc = direction === 'desc';
+      switch (field) {
+        case 'name': orderBy = isDesc ? desc(customerTable.name) : asc(customerTable.name); break;
+        case 'email': orderBy = isDesc ? desc(customerTable.email) : asc(customerTable.email); break;
+        case 'created': orderBy = isDesc ? desc(customerTable.created) : asc(customerTable.created); break;
+        case 'createdAt': orderBy = isDesc ? desc(customerTable.createdAt) : asc(customerTable.createdAt); break;
+        default: orderBy = desc(customerTable.id);
+      }
+    } else {
+      orderBy = desc(customerTable.id);
+    }
+
+    const customers = await db.select()
+      .from(customerTable)
+      .where(and(...conditions))
+      .orderBy(orderBy)
+      .limit(pageSizeNum)
+      .offset((pageNum - 1) * pageSizeNum);
+
+    // Calculate totalSpent for each customer
+    const customersWithSpent = await Promise.all(
+      customers.map(async (customer) => {
+        const [spentResult] = await db.select({ 
+          totalSpent: sql`COALESCE(SUM(${chargesTable.amount}), 0)` 
+        })
+        .from(chargesTable)
+        .where(
+          and(
+            eq(chargesTable.stripeCustomerId, customer.stripeCustomerId),
+            eq(chargesTable.paid, true),
+            eq(chargesTable.userId, user.id)
+          )
+        );
+        
+        return {
+          ...customer,
+          totalSpent: Number(spentResult?.totalSpent || 0)
+        };
+      })
+    );
+
+    const totalResult = await db.select({ count: sql`count(*)` })
+      .from(customerTable)
+      .where(and(...conditions));
+    
+    const total = Number(totalResult[0]?.count ?? 0);
+    
+    res.json({
+      data: customersWithSpent,
+      total,
+      page: pageNumNum,
+      pageSize: pageSizeNum,
+      totalPages: Math.ceil(total / pageSizeNum)
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+/*******  8ca93248-10f7-4c84-a79a-a38259727ad5  *******/
+
+export const createCustomer = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  const user = await getUserFromToken(req);
+  if (!user) {res.status(401).json({ error: 'Unauthorized' }); return;}
+
+  const { accountId, email, name, description } = req.body;
+  if (!accountId) {res.status(400).json({ error: 'Account ID is required' }); return;}
+
+  try {
+    const stripe = await getOrCreateStripeClient(accountId, user.id);
+    if (!stripe) {res.status(404).json({ error: 'Stripe account not found' }); return;}
+
+    const customer = await stripe.customers.create({
+      email,
+      name,
+      description,
+      metadata: { userId: user.id.toString() }
+    });
+
+    await db.insert(customerTable).values({
+      userId: user.id,
+      stripeAccountId: Number(accountId),
+      stripeCustomerId: customer.id,
+      email: customer.email,
+      name: customer.name,
+      liveMode: customer.livemode,
+      created: customer.created
+    });
+
+    res.status(201).json(customer);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const retrieveCustomer = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  const user = await getUserFromToken(req);
+  if (!user) {res.status(401).json({ error: 'Unauthorized' }); return;}
+
+  const customerId = String(req.params['customerId']);
+  const accountId = String(req.query['accountId'] || '');
+
+  try {
+    const stripe = await getOrCreateStripeClient(accountId, user.id);
+    if (!stripe) {res.status(404).json({ error: 'Stripe account not found' }); return;}
+
+    const customer = await stripe.customers.retrieve(customerId);
+    if (customer.deleted) {res.status(404).json({ error: 'Customer deleted' }); return;}
+
+    // Calculate totalSpent for this customer
+    const [spentResult] = await db.select({ 
+      totalSpent: sql`COALESCE(SUM(${chargesTable.amount}), 0)` 
+    })
+    .from(chargesTable)
+    .where(
+      and(
+        eq(chargesTable.stripeCustomerId, customerId),
+        eq(chargesTable.paid, true),
+        eq(chargesTable.userId, user.id)
+      )
+    );
+
+    res.json({
+      ...customer,
+      totalSpent: Number(spentResult?.totalSpent || 0)
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getCustomerInsights = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  const accountId = String(req.params['accountId']);
+  const user = await getUserFromToken(req);
+  const userId = user?.id;
+
+  if (!userId) {res.status(401).json({ error: 'Unauthorized' }); return;}
+  if (!accountId) {res.status(400).json({ error: 'Account ID is required.' }); return;}
+
+  try {
+    const stripe = await getOrCreateStripeClient(accountId, userId);
+    if (!stripe) {res.status(404).json({ error: 'Stripe account not found.' }); return;}
+
+    // Fetch basic insights - this can be expanded based on needs
+    const customers = await stripe.customers.list({ limit: 100 });
+    
+    res.json({
+      totalCustomers: customers.data.length,
+      hasMore: customers.has_more,
+      // Add more aggregated stats here if needed
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateCustomer = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  const user = await getUserFromToken(req);
+  if (!user) {res.status(401).json({ error: 'Unauthorized' }); return;}
+
+  const customerId = String(req.params['customerId']);
+  const { accountId, email, name, description } = req.body;
+
+  try {
+    const stripe = await getOrCreateStripeClient(accountId, user.id);
+    if (!stripe) {res.status(404).json({ error: 'Stripe account not found' }); return;}
+
+    const customer = await stripe.customers.update(customerId, { email, name, description });
+    
+    // Sync local DB update logic here if needed
+    
+    res.json(customer);
+  } catch (error) {
+    next(error);
+  }
+};

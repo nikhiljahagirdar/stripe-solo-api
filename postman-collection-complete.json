@@ -1,0 +1,1385 @@
+{
+  "info": {
+    "name": "Stripe Management API - Complete",
+    "description": "Complete API collection with full CRUD operations for Stripe Management Platform",
+    "version": "1.0.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3001",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "userId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "customerId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "stripeAccountId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "resourceId",
+      "value": "1",
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Register User",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"firstName\": \"John\", \"lastName\": \"Doe\", \"email\": \"john.doe@example.com\", \"password\": \"password123\", \"roleName\": \"Admin\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "register"]
+            }
+          }
+        },
+        {
+          "name": "Login User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('token', response.token);",
+                  "    pm.collectionVariables.set('userId', response.user.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\": \"john.doe@example.com\", \"password\": \"password123\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "Get User Permissions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/permissions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "permissions"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Get All Users",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users?page=1&pageSize=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users"],
+              "query": [
+                {"key": "page", "value": "1"},
+                {"key": "pageSize", "value": "10"},
+                {"key": "query", "value": "", "disabled": true},
+                {"key": "sort", "value": "firstName:asc", "disabled": true}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get User by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "{{userId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update User",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"firstName\": \"Jane\", \"lastName\": \"Smith\", \"email\": \"jane.smith@example.com\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "{{userId}}"]
+            }
+          }
+        },
+        {
+          "name": "Delete User",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "{{userId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customers",
+      "item": [
+        {
+          "name": "Get All Customers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/customers?page=1&pageSize=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "customers"],
+              "query": [
+                {"key": "page", "value": "1"},
+                {"key": "pageSize", "value": "10"},
+                {"key": "query", "value": "", "disabled": true},
+                {"key": "sort", "value": "name:asc", "disabled": true}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create Customer",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\": \"customer@example.com\", \"name\": \"John Customer\", \"stripeAccountId\": \"{{stripeAccountId}}\", \"description\": \"Test customer\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/customers",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "customers"]
+            }
+          }
+        },
+        {
+          "name": "Get Customer by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/customers/{{customerId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "customers", "{{customerId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update Customer",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\": \"updated@example.com\", \"name\": \"Updated Customer\", \"stripeAccountId\": \"{{stripeAccountId}}\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/customers/{{customerId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "customers", "{{customerId}}"]
+            }
+          }
+        },
+        {
+          "name": "Get Customer Insights",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/customers/{{customerId}}/insights",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "customers", "{{customerId}}", "insights"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Roles",
+      "item": [
+        {
+          "name": "Get All Roles",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roles",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roles"]
+            }
+          }
+        },
+        {
+          "name": "Create Role",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"Manager\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roles",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roles"]
+            }
+          }
+        },
+        {
+          "name": "Get Role by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roles/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roles", "{{resourceId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update Role",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"Senior Manager\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roles/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roles", "{{resourceId}}"]
+            }
+          }
+        },
+        {
+          "name": "Delete Role",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roles/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roles", "{{resourceId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Stripe Keys",
+      "item": [
+        {
+          "name": "Get All Keys",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/keys",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "keys"]
+            }
+          }
+        },
+        {
+          "name": "Create Key",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"Test Key\", \"apiKey\": \"sk_test_...\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/keys",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "keys"]
+            }
+          }
+        },
+        {
+          "name": "Get Key by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/keys/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "keys", "{{resourceId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update Key",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"Updated Key\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/keys/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "keys", "{{resourceId}}"]
+            }
+          }
+        },
+        {
+          "name": "Delete Key",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/keys/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "keys", "{{resourceId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Analytics",
+      "item": [
+        {
+          "name": "Get Analytics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/analytics",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "analytics"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Dashboard",
+      "item": [
+        {
+          "name": "Get Dashboard Data",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dashboard",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "dashboard"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Accounts",
+      "item": [
+        {
+          "name": "Get All Accounts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounts",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounts"]
+            }
+          }
+        },
+        {
+          "name": "Create Account",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"businessType\": \"company\", \"country\": \"US\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounts",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounts"]
+            }
+          }
+        },
+        {
+          "name": "Get Account by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounts/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounts", "{{resourceId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update Account",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"businessType\": \"individual\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounts/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounts", "{{resourceId}}"]
+            }
+          }
+        },
+        {
+          "name": "Delete Account",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounts/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounts", "{{resourceId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payments",
+      "item": [
+        {
+          "name": "Get All Payments",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payments"]
+            }
+          }
+        },
+        {
+          "name": "Create Payment",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\": 2000, \"currency\": \"usd\", \"customerId\": \"{{customerId}}\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payments"]
+            }
+          }
+        },
+        {
+          "name": "Get Payment by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payments", "{{resourceId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update Payment",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"description\": \"Updated payment\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payments", "{{resourceId}}"]
+            }
+          }
+        },
+        {
+          "name": "Cancel Payment",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payments", "{{resourceId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Invoices",
+      "item": [
+        {
+          "name": "Get All Invoices",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/invoices",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "invoices"]
+            }
+          }
+        },
+        {
+          "name": "Create Invoice",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"customerId\": \"{{customerId}}\", \"currency\": \"usd\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/invoices",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "invoices"]
+            }
+          }
+        },
+        {
+          "name": "Get Invoice by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/invoices/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "invoices", "{{resourceId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update Invoice",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"description\": \"Updated invoice\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/invoices/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "invoices", "{{resourceId}}"]
+            }
+          }
+        },
+        {
+          "name": "Delete Invoice",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/invoices/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "invoices", "{{resourceId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Subscriptions",
+      "item": [
+        {
+          "name": "Get All Subscriptions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/subscriptions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "subscriptions"]
+            }
+          }
+        },
+        {
+          "name": "Create Subscription",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"customerId\": \"{{customerId}}\", \"priceId\": \"price_123\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/subscriptions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "subscriptions"]
+            }
+          }
+        },
+        {
+          "name": "Get Subscription by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/subscriptions/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "subscriptions", "{{resourceId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update Subscription",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"quantity\": 2}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/subscriptions/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "subscriptions", "{{resourceId}}"]
+            }
+          }
+        },
+        {
+          "name": "Cancel Subscription",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/subscriptions/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "subscriptions", "{{resourceId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payouts",
+      "item": [
+        {
+          "name": "Get All Payouts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payouts",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payouts"]
+            }
+          }
+        },
+        {
+          "name": "Create Payout",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\": 1000, \"currency\": \"usd\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payouts",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payouts"]
+            }
+          }
+        },
+        {
+          "name": "Get Payout by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payouts/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payouts", "{{resourceId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update Payout",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"description\": \"Updated payout\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payouts/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payouts", "{{resourceId}}"]
+            }
+          }
+        },
+        {
+          "name": "Cancel Payout",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payouts/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payouts", "{{resourceId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Disputes",
+      "item": [
+        {
+          "name": "Get All Disputes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/disputes",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "disputes"]
+            }
+          }
+        },
+        {
+          "name": "Get Dispute by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/disputes/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "disputes", "{{resourceId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update Dispute",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"evidence\": {\"customer_communication\": \"Evidence text\"}}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/disputes/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "disputes", "{{resourceId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Tax",
+      "item": [
+        {
+          "name": "Get Tax Settings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tax",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "tax"]
+            }
+          }
+        },
+        {
+          "name": "Update Tax Settings",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"taxMode\": \"automatic\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tax",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "tax"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Balance",
+      "item": [
+        {
+          "name": "Get Balance",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/balance",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "balance"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Charges",
+      "item": [
+        {
+          "name": "Get All Charges",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/charges",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "charges"]
+            }
+          }
+        },
+        {
+          "name": "Create Charge",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\": 2000, \"currency\": \"usd\", \"source\": \"tok_visa\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/charges",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "charges"]
+            }
+          }
+        },
+        {
+          "name": "Get Charge by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/charges/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "charges", "{{resourceId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update Charge",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"description\": \"Updated charge\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/charges/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "charges", "{{resourceId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Refunds",
+      "item": [
+        {
+          "name": "Get All Refunds",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/refunds",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "refunds"]
+            }
+          }
+        },
+        {
+          "name": "Create Refund",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"chargeId\": \"ch_123\", \"amount\": 1000}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/refunds",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "refunds"]
+            }
+          }
+        },
+        {
+          "name": "Get Refund by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/refunds/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "refunds", "{{resourceId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update Refund",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"reason\": \"requested_by_customer\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/refunds/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "refunds", "{{resourceId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payment Methods",
+      "item": [
+        {
+          "name": "Get All Payment Methods",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payment-methods",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payment-methods"]
+            }
+          }
+        },
+        {
+          "name": "Create Payment Method",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"type\": \"card\", \"customerId\": \"{{customerId}}\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payment-methods",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payment-methods"]
+            }
+          }
+        },
+        {
+          "name": "Get Payment Method by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payment-methods/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payment-methods", "{{resourceId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update Payment Method",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"metadata\": {\"order_id\": \"6735\"}}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payment-methods/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payment-methods", "{{resourceId}}"]
+            }
+          }
+        },
+        {
+          "name": "Delete Payment Method",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payment-methods/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payment-methods", "{{resourceId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Coupons",
+      "item": [
+        {
+          "name": "Get All Coupons",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/coupons",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "coupons"]
+            }
+          }
+        },
+        {
+          "name": "Create Coupon",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"percentOff\": 25, \"duration\": \"once\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/coupons",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "coupons"]
+            }
+          }
+        },
+        {
+          "name": "Get Coupon by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/coupons/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "coupons", "{{resourceId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update Coupon",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"Updated Coupon\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/coupons/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "coupons", "{{resourceId}}"]
+            }
+          }
+        },
+        {
+          "name": "Delete Coupon",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/coupons/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "coupons", "{{resourceId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Checkout",
+      "item": [
+        {
+          "name": "Get Checkout Sessions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/checkout",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "checkout"]
+            }
+          }
+        },
+        {
+          "name": "Create Checkout Session",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"mode\": \"payment\", \"lineItems\": [{\"priceData\": {\"currency\": \"usd\", \"productData\": {\"name\": \"T-shirt\"}, \"unitAmount\": 2000}, \"quantity\": 1}], \"successUrl\": \"https://example.com/success\", \"cancelUrl\": \"https://example.com/cancel\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/checkout",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "checkout"]
+            }
+          }
+        },
+        {
+          "name": "Get Checkout Session by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/checkout/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "checkout", "{{resourceId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payment Links",
+      "item": [
+        {
+          "name": "Get All Payment Links",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payment-links",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payment-links"]
+            }
+          }
+        },
+        {
+          "name": "Create Payment Link",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"lineItems\": [{\"price\": \"price_123\", \"quantity\": 1}]}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payment-links",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payment-links"]
+            }
+          }
+        },
+        {
+          "name": "Get Payment Link by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payment-links/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payment-links", "{{resourceId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update Payment Link",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"active\": false}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payment-links/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payment-links", "{{resourceId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "RBAC",
+      "item": [
+        {
+          "name": "Get RBAC Pages",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rbac/pages",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rbac", "pages"]
+            }
+          }
+        },
+        {
+          "name": "Create RBAC Page",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"pagename\": \"Test Page\", \"pageUrl\": \"/test\", \"groupName\": \"Test Group\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rbac/pages",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rbac", "pages"]
+            }
+          }
+        },
+        {
+          "name": "Get RBAC Page by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rbac/pages/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rbac", "pages", "{{resourceId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update RBAC Page",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"pagename\": \"Updated Page\", \"pageUrl\": \"/updated\", \"groupName\": \"Updated Group\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rbac/pages/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rbac", "pages", "{{resourceId}}"]
+            }
+          }
+        },
+        {
+          "name": "Delete RBAC Page",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rbac/pages/{{resourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rbac", "pages", "{{resourceId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Webhooks",
+      "item": [
+        {
+          "name": "Handle Webhook",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "stripe-signature", "value": "webhook_signature_here"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"id\": \"evt_test_webhook\", \"object\": \"event\", \"type\": \"payment_intent.succeeded\", \"data\": {\"object\": {\"id\": \"pi_test_payment_intent\"}}}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/webhooks",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "webhooks"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Health Check",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
