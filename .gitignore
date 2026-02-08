@@ -15,10 +15,6 @@ yarn-error.log*
 dist/
 build/
 
-# Logs
-logs/
-*.log
-
 # Runtime data
 pids/
 *.pid
