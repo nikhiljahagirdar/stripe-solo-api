@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth.middleware';
-import { listAccounts, getAccount,removeAccount,syncAccounts} from '../controllers/accounts.controller';
+import { listAccounts, getAccount,removeAccount,syncAccounts, getAccountsByKey} from '../controllers/accounts.controller';
 import { listBalanceAndAccount } from '../controllers/balance.controller';
 
 const router = Router();
@@ -13,6 +13,17 @@ const router = Router();
  * @return {object} 401 - Unauthorized.
  */
 router.get('/', authenticate, listAccounts);
+
+/**
+ * GET /api/v1/accounts/by-key/{keyId}
+ * @summary Get accounts by Stripe key ID
+ * @tags Accounts
+ * @param {integer} keyId.path.required - The Stripe key ID
+ * @return {object} 200 - Array of Stripe account objects
+ * @return {object} 400 - Invalid key ID
+ * @return {object} 401 - Unauthorized
+ */
+router.get('/by-key/:keyId', authenticate, getAccountsByKey);
 
 /**
  * GET /api/v1/accounts/{accountId}

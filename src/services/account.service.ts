@@ -16,8 +16,10 @@ export async function listAccountsByUserId(userId: number, accountId?: number, y
   if (year) {
     const startDate = new Date(year, 0, 1);
     const endDate = new Date(year, 11, 31, 23, 59, 59, 999);
-    conditions.push(sql`${stripeAccounts.createdAt} >= ${startDate}`);
-    conditions.push(sql`${stripeAccounts.createdAt} <= ${endDate}`);
+    conditions.push(
+      sql`${stripeAccounts.createdAt} >= ${startDate}`,
+      sql`${stripeAccounts.createdAt} <= ${endDate}`
+    );
   }
 
   return db.select().from(stripeAccounts).where(and(...conditions));
@@ -89,4 +91,11 @@ export async function deleteAccount(userId: number, accountId: number): Promise<
     .where(and(eq(stripeAccounts.id, accountId), eq(stripeAccounts.userId, userId)))
     .returning();
   return result.length > 0;
+}
+
+export async function getAccountsByKeyId(userId: number, keyId: number): Promise<StripeAccount[]> {
+  return db
+    .select()
+    .from(stripeAccounts)
+    .where(and(eq(stripeAccounts.userId, userId), eq(stripeAccounts.stripe_key_id, keyId)));
 }

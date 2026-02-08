@@ -1079,9 +1079,7 @@ export const notificationsTable = pgTable(
     userId: integer('user_id')
       .notNull()
       .references(() => users.id),
-    type: text('type', {
-      enum: ['sync_success', 'sync_failure', 'sync_partial'],
-    }).notNull(),
+    type: text('type').notNull(),
     message: text('message').notNull(),
     isRead: boolean('is_read').default(false),
     createdAt: timestamp('created_at').defaultNow().notNull(),

@@ -25,13 +25,31 @@ import { emitNotificationToUser, emitSyncStatus } from '../services/socket.servi
  */
 
 /**
+ * Response payload for key creation with account sync.
+ * @typedef {object} CreateKeyResponse
+ * @property {StripeKeyResponse} key - The newly created key.
+ * @property {number|null} accountId - The synced Stripe account ID, or null if sync failed.
+ */
+
+/**
  * POST /api/keys
  * @summary Create a new Stripe key
  * @description Creates and securely stores a new Stripe API key. It also triggers a sync of connected accounts associated with this key.
  * @tags Keys
  * @security BearerAuth
  * @param {CreateKeyBody} request.body.required - The details for the new key.
- * @return {StripeKeyResponse} 201 - The newly created key object.
+ * @return {CreateKeyResponse} 201 - The newly created key and synced account ID.
+ * @example response - 201 - Success response
+ * {
+ *   "key": {
+ *     "id": 10,
+ *     "userId": 123,
+ *     "name": "My Stripe Key",
+ *     "createdAt": "2024-01-01T00:00:00.000Z",
+ *     "updatedAt": "2024-01-01T00:00:00.000Z"
+ *   },
+ *   "accountId": 5
+ * }
  * @return {object} 400 - Bad Request - Missing required fields.
  * @return {object} 401 - Unauthorized.
  * @return {object} 500 - Internal Server Error.
@@ -50,6 +68,7 @@ export const createKey = async (req: Request, res: Response, next: NextFunction)
 
   try {
     const newKey = await createStripeKey({ userId, name, apiKey });
+    let syncedAccountId: number | null = null;
     
     // Emit sync started event
     emitSyncStatus(userId, {
@@ -60,7 +79,8 @@ export const createKey = async (req: Request, res: Response, next: NextFunction)
     
     // Sync accounts from Stripe after key creation
     try {
-      await syncStripeAccount(userId, newKey!.id);
+      const syncedAccount = await syncStripeAccount(userId, newKey!.id);
+      syncedAccountId = syncedAccount?.id ?? null;
       
       // Prepare webhook payload
       const webhookPayload: WebhookPayload = {
@@ -140,7 +160,7 @@ export const createKey = async (req: Request, res: Response, next: NextFunction)
       });
     }
     
-    res.status(201).json(newKey);
+    res.status(201).json({ key: newKey, accountId: syncedAccountId });
   } catch (error) {
     next(error);
   }

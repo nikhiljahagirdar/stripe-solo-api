@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
-import { syncStripeAccount, listAccountsByUserId, getAccountById, deleteAccount } from '../services/account.service';
+import { syncStripeAccount, listAccountsByUserId, getAccountById, deleteAccount, getAccountsByKeyId } from '../services/account.service';
 import { getUserFromToken } from '../utils/auth.utils';
 
 /**
@@ -195,6 +195,56 @@ export const listAccounts = async (req: Request, res: Response, next: NextFuncti
         const year = req.query['year'] ? Number(req.query['year'] as string) : undefined;
 
         const accounts = await listAccountsByUserId(user.id, accountId, year);
+        res.status(200).json({ data: accounts });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * GET /api/v1/accounts/by-key/{keyId}
+ * @summary Get accounts associated with a specific Stripe key
+ * @description Retrieves all Stripe accounts linked to a specific API key
+ * @tags Accounts
+ * @security BearerAuth
+ * @param {integer} keyId.path.required - The Stripe key ID
+ * @return {object} 200 - List of accounts retrieved successfully
+ * @example response - 200 - Success response
+ * {
+ *   "data": [
+ *     {
+ *       "id": 1,
+ *       "userId": 123,
+ *       "stripe_key_id": 5,
+ *       "stripeAccountId": "acct_1234567890",
+ *       "displayName": "My Business Account",
+ *       "email": "business@example.com",
+ *       "country": "US",
+ *       "defaultCurrency": "usd",
+ *       "chargesEnabled": true,
+ *       "payoutsEnabled": true,
+ *       "type": "express"
+ *     }
+ *   ]
+ * }
+ * @return {object} 401 - Unauthorized - User not authenticated
+ * @return {object} 500 - Internal Server Error
+ */
+export const getAccountsByKey = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+        const user = await getUserFromToken(req);
+        
+        if (!user?.id) {
+            res.status(401).json({ message: 'Unauthorized' }); return;
+        }
+
+        const keyId = Number(req.params['keyId']);
+
+        if (!keyId || Number.isNaN(keyId)) {
+            res.status(400).json({ message: 'Invalid key ID' }); return;
+        }
+
+        const accounts = await getAccountsByKeyId(user.id, keyId);
         res.status(200).json({ data: accounts });
     } catch (error) {
         next(error);
