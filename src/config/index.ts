@@ -25,7 +25,19 @@ export const config = {
   },
   
   cors: {
-    origin: process.env['CORS_ORIGIN']?.split(',') ?? ['http://localhost:3000'],
+    origin: (() => {
+      const raw = process.env['CORS_ORIGIN'];
+      if (!raw) {
+        return ['http://localhost:3000'];
+      }
+      if (raw.trim() === '*') {
+        return '*';
+      }
+      return raw
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean);
+    })(),
     credentials: true,
   },
   
