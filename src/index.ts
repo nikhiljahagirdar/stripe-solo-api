@@ -95,6 +95,16 @@ app.use(express.urlencoded({ extended: true }));
 app.use(validatePaginationMiddleware);
 app.use(validateQueryParamsMiddleware);
 
+// Root route
+app.get('/', (_req, res) => {
+  res.status(200).json({
+    message: 'Stripe Solo API is running',
+    docs: '/api-docs',
+    health: '/health',
+    ready: '/ready'
+  });
+});
+
 // Health check routes (no auth required)
 app.use('/', healthRoutes);
 
